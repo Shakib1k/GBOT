@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Manage Users</title>
+    <style>
+        body { margin: 0; font-family: Arial; background: #0f0f13; color: white; display: flex; }
+        .sidebar { width: 250px; background: #1e1e24; height: 100vh; padding: 20px; box-sizing: border-box; }
+        .sidebar a { display: block; color: #aaa; text-decoration: none; padding: 15px; margin-bottom: 10px; border-radius: 5px; }
+        .sidebar a:hover { background: #2a2a35; color: white; }
+        .main { flex: 1; padding: 40px; }
+        .form-group { margin-bottom: 15px; }
+        input { padding: 10px; border-radius: 5px; border: none; background: #2a2a35; color: white; margin-right: 10px; }
+        button { padding: 10px 20px; background: #4CAF50; border: none; color: white; border-radius: 5px; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; margin-top: 30px; background: #1e1e24; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #333; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2 style="color: #4CAF50;">Admin Panel</h2>
+        <a href="/dashboard">Dashboard</a>
+        <a href="/manage_users" style="background: #2a2a35; color: white;">User Create & Manage</a>
+        <a href="#" onclick="alert('Coming soon!')">User APKs</a>
+        <a href="/admin" style="margin-top: 50px; color: #ff5555;">Logout</a>
+    </div>
+    <div class="main">
+        <h1>User & Key Management</h1>
+        <div style="background: #1e1e24; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+            <h3>Generate New Key</h3>
+            <input type="text" id="userId" placeholder="Telegram ID">
+            <input type="number" id="credits" value="10" placeholder="Credits">
+            <button onclick="generateKey()">Generate</button>
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>Key</th><th>User ID</th><th>Credits</th><th>Status</th></tr>
+            </thead>
+            <tbody id="keyTable"></tbody>
+        </table>
+    </div>
+
+    <script>
+        async function generateKey() {
+            const uid = document.getElementById('userId').value;
+            const credits = document.getElementById('credits').value;
+            const res = await fetch('/api/generate_key', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({user_id: uid, credits: credits})
+            });
+            const data = await res.json();
+            if(data.success) { alert("New Key: " + data.key); location.reload(); }
+        }
+    </script>
+</body>
+</html>
