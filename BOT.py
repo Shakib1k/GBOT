@@ -24,6 +24,8 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 
 # Active reaction bots tracking
 active_reaction_apps = {}
+# Global asyncio loop reference to safely start new bots from Flask thread
+main_event_loop = None
 
 db = {
     "users": {},
@@ -115,12 +117,10 @@ def add_reaction_bot():
         return jsonify({"success": False, "message": "All fields are required!"})
     
     try:
-        # টোকেন চেক
         res = requests.get(f"https://api.telegram.org/bot{token}/getMe")
         if res.status_code != 200:
             return jsonify({"success": False, "message": "Invalid Bot Token!"})
             
-        # চ্যানেলে বট অ্যাডমিন কিনা চেক
         chat_res = requests.get(f"https://api.telegram.org/bot{token}/getChat?chat_id={channel_id}")
         if chat_res.status_code != 200:
             return jsonify({"success": False, "message": "Bot is not an admin in this channel or Channel ID is wrong!"})
@@ -129,7 +129,10 @@ def add_reaction_bot():
         return jsonify({"success": False, "message": "Network error or Invalid Token."})
         
     db["reaction_bots"].append({"token": token, "channel_id": channel_id, "emojis": emojis})
+    
+    # নতুন বটটি সাথে সাথে চালু করা
     start_single_reaction_bot(token, channel_id, emojis)
+    
     return jsonify({"success": True})
 
 @app.route('/api/delete_reaction_bot', methods=['POST'])
@@ -140,9 +143,11 @@ def delete_reaction_bot():
         token = bot_data.get("token")
         if token in active_reaction_apps:
             try:
-                active_reaction_apps[token].stop()
+                # থ্রেড বন্ধ করা
+                active_reaction_apps[token]['stop_event'].set()
                 del active_reaction_apps[token]
-            except: pass
+            except Exception as e:
+                logging.error(f"Error stopping bot: {e}")
     return jsonify({"success": True})
 
 def run_flask(): app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
@@ -167,20 +172,28 @@ async def auto_react(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logging.error(f"Reaction failed for channel {channel_id}: {e}")
 
-def start_single_reaction_bot(token, channel_id, emojis):
-    if token in active_reaction_apps: return
-    
+def run_reaction_bot_sync(token, channel_id, emojis, stop_event):
+    """সিঙ্ক্রোনাস ফাংশন যা আলাদা থ্রেডে চলবে"""
     try:
         rb_app = Application.builder().token(token).build()
         rb_app.add_handler(MessageHandler(filters.ALL, auto_react))
         
-        def run_bot():
-            rb_app.run_polling(drop_pending_updates=True)
-            
-        thread = threading.Thread(target=run_bot, daemon=True)
+        # বট চালু করা
+        rb_app.run_polling(drop_pending_updates=True, close_loop=False)
+    except Exception as e:
+        logging.error(f"Error in reaction bot thread for {channel_id}: {e}")
+
+def start_single_reaction_bot(token, channel_id, emojis):
+    """ফ্লাস্ক থেকে নতুন বট চালু করার ফাংশন"""
+    if token in active_reaction_apps: 
+        return
+    
+    try:
+        stop_event = threading.Event()
+        thread = threading.Thread(target=run_reaction_bot_sync, args=(token, channel_id, emojis, stop_event), daemon=True)
         thread.start()
         
-        active_reaction_apps[token] = rb_app
+        active_reaction_apps[token] = {'thread': thread, 'stop_event': stop_event}
         logging.info(f"Reaction Bot started for channel: {channel_id}")
     except Exception as e:
         logging.error(f"Failed to start Reaction Bot for {channel_id}: {e}")
@@ -345,8 +358,10 @@ async def handle_protection(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     if not BOT_TOKEN: return print("ERROR: BOT_TOKEN missing!")
     
+    # ফ্লাস্ক সার্ভার আলাদা থ্রেডে চালু
     threading.Thread(target=run_flask, daemon=True).start()
     
+    # মেইন বট অ্যাপ্লিকেশন
     app_bot = Application.builder().token(BOT_TOKEN).build()
     app_bot.add_handler(CommandHandler("start", start))
     app_bot.add_handler(CallbackQueryHandler(handle_callbacks, pattern='^(verify_join|free_trial|user_login|protect)$'))
@@ -354,6 +369,7 @@ def main():
     app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app_bot.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     
+    # সার্ভার চালু হওয়ার সময় ডাটাবেসে থাকা রিঅ্যাকশন বটগুলো চালু করা
     for rb in db["reaction_bots"]:
         start_single_reaction_bot(rb["token"], rb["channel_id"], rb["emojis"])
     
