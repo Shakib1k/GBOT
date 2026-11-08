@@ -9,6 +9,7 @@ import random
 import string
 import threading
 from flask import Flask, request, jsonify, render_template
+from flask_cors import CORS
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
@@ -17,7 +18,6 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 # Environment Variables
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-# ⚠️ আপনার GitLab টোকেন
 GITLAB_TOKEN = "glpat-6HhMaa8p9Q84RAncGnbLCGM6MQpvOjEKdTpvODlveA8.01.17007rkbm"
 GITLAB_PROJECT_ID = "Shakib1k%2Fsk-bd"
 GITLAB_FILE_PATH = "db.json"
@@ -59,6 +59,7 @@ def gen_key():
 
 # ==================== FLASK WEB API ====================
 app = Flask(__name__, template_folder='.')
+CORS(app) # ব্রাউজার থেকে ডাটা পড়ার অনুমতি দিল
 
 @app.route('/admin')
 def admin_page():
@@ -105,7 +106,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear() 
     
     db = read_db()
-    # ইউজার লগইন করা আছে কিনা চেক
     user = db.get("users", {}).get(user_id)
     
     if user and user.get("is_logged_in"):
@@ -124,7 +124,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = read_db()
     key_data = db.get("keys", {}).get(text)
     
-    # কী ভ্যালিডেশন
     if key_data and str(key_data['user_id']) == user_id and not key_data['used']:
         credits = key_data['credits']
         if "users" not in db: db["users"] = {}
