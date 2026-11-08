@@ -17,7 +17,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 # Environment Variables
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-# ⚠️ আপনার GitLab টোকেন সরাসরি এখানে বসানো হলো
+# ⚠️ আপনার GitLab টোকেন
 GITLAB_TOKEN = "glpat-6HhMaa8p9Q84RAncGnbLCGM6MQpvOjEKdTpvODlveA8.01.17007rkbm"
 GITLAB_PROJECT_ID = "Shakib1k%2Fsk-bd"
 GITLAB_FILE_PATH = "db.json"
@@ -34,7 +34,6 @@ def read_db():
         response = requests.get(url, headers=headers)
         if response.status_code == 200:
             content = base64.b64decode(response.json()['content']).decode('utf-8')
-            # যদি ডাটাবেস ফাঁকা থাকে, তবে ডিফল্ট স্ট্রাকচার দেবে
             return json.loads(content) if content else {"users": {}, "keys": {}, "history": []}
     except Exception as e:
         logging.error(f"GitLab Read Error: {e}")
@@ -58,7 +57,7 @@ def write_db(data):
 def gen_key():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
 
-# ==================== FLASK WEB API (For Admin Panel) ====================
+# ==================== FLASK WEB API ====================
 app = Flask(__name__, template_folder='.')
 
 @app.route('/admin')
@@ -106,6 +105,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear() 
     
     db = read_db()
+    # ইউজার লগইন করা আছে কিনা চেক
     user = db.get("users", {}).get(user_id)
     
     if user and user.get("is_logged_in"):
@@ -124,6 +124,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = read_db()
     key_data = db.get("keys", {}).get(text)
     
+    # কী ভ্যালিডেশন
     if key_data and str(key_data['user_id']) == user_id and not key_data['used']:
         credits = key_data['credits']
         if "users" not in db: db["users"] = {}
@@ -196,7 +197,6 @@ async def handle_protection_choice(update: Update, context: ContextTypes.DEFAULT
         if os.path.exists(generated_file):
             await query.message.reply_document(document=open(generated_file, 'rb'), filename=output_name, caption=f"✅ **Protected Successfully!**\nType: {choice}")
             
-            # ডাটাবেস আপডেট (ক্রেডিট মাইনাস এবং হিস্ট্রি সেভ)
             db = read_db()
             db["users"][user_id]["credits"] -= 1
             if "history" not in db: db["history"] = []
