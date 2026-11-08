@@ -13,17 +13,14 @@ from flask_cors import CORS
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-# Logging Setup
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = 7058712225 
-
 BASE_DIR = os.getcwd()
 TEMP_DIR = os.path.join(BASE_DIR, "temp")
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-# ==================== DATABASE ====================
 db = {
     "users": {},
     "keys": {},
@@ -33,8 +30,8 @@ db = {
         "premium_link": "https://t.me/YourAdminUsername",
         "trial_credits": 15,
         "trial_wait_time": 30,
-        "welcome_text": "👋 Welcome to the APK Protector Bot!",
-        "trial_btn_text": "🎁 Try Free Trial",
+        "welcome_text": "👋 **Welcome to the APK Protector Bot!**\n\nPlease login or start a free trial to continue.",
+        "trial_btn_text": "🎁 Free Trial",
         "premium_btn_text": "💎 Buy Premium"
     }
 }
@@ -42,7 +39,6 @@ db = {
 def gen_key():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
 
-# ==================== FLASK WEB API ====================
 app = Flask(__name__, template_folder='.')
 CORS(app)
 
@@ -54,16 +50,12 @@ def admin_page():
 def get_users():
     users = []
     for k, v in db["keys"].items():
-        users.append({"user_id": v.get("user_id"), "key": k, "credits": v.get("credits"), "used": v.get("used", False)})
+        users.append({"key": k, "user_id": v.get("user_id"), "credits": v.get("credits"), "used": v.get("used", False)})
     return jsonify(users)
 
 @app.route('/api/get_trial_users')
 def get_trial_users():
-    trial_users = []
-    for uid, data in db["users"].items():
-        if data.get("trial_used"):
-            trial_users.append({"user_id": uid, "credits": data.get("credits")})
-    return jsonify(trial_users)
+    return jsonify([{"user_id": uid, "credits": d.get("credits")} for uid, d in db["users"].items() if d.get("trial_used")])
 
 @app.route('/api/get_history')
 def get_history():
@@ -71,329 +63,235 @@ def get_history():
 
 @app.route('/api/get_settings')
 def get_settings():
-    return jsonify({
-        "settings": db["settings"],
-        "channels": db["join_channels"]
-    })
+    return jsonify({"settings": db["settings"], "channels": db["join_channels"]})
 
 @app.route('/api/update_settings', methods=['POST'])
 def update_settings():
     data = request.json
-    db["settings"]["premium_link"] = data.get("premium_link", db["settings"]["premium_link"])
-    db["settings"]["trial_credits"] = int(data.get("trial_credits", db["settings"]["trial_credits"]))
-    db["settings"]["trial_wait_time"] = int(data.get("trial_wait_time", db["settings"]["trial_wait_time"]))
-    db["settings"]["welcome_text"] = data.get("welcome_text", db["settings"]["welcome_text"])
-    db["settings"]["trial_btn_text"] = data.get("trial_btn_text", db["settings"]["trial_btn_text"])
-    db["settings"]["premium_btn_text"] = data.get("premium_btn_text", db["settings"]["premium_btn_text"])
+    db["settings"].update(data)
     return jsonify({"success": True})
 
 @app.route('/api/add_channel', methods=['POST'])
 def add_channel():
     data = request.json
-    db["join_channels"].append({
-        "name": data.get("name"),
-        "link": data.get("link"),
-        "type": data.get("type"),
-        "chat_id": data.get("chat_id", "")
-    })
+    db["join_channels"].append({"name": data.get("name"), "link": data.get("link"), "type": data.get("type"), "chat_id": data.get("chat_id", "")})
     return jsonify({"success": True})
 
 @app.route('/api/delete_channel', methods=['POST'])
 def delete_channel():
-    data = request.json
-    index = data.get("index")
-    if 0 <= index < len(db["join_channels"]):
-        db["join_channels"].pop(index)
+    index = request.json.get("index")
+    if 0 <= index < len(db["join_channels"]): db["join_channels"].pop(index)
     return jsonify({"success": True})
 
 @app.route('/api/create_user', methods=['POST'])
 def create_user():
     data = request.json
-    uid = str(data.get('user_id'))
-    credits = data.get('credits')
-    key = data.get('key') or gen_key()
-    
+    uid, credits, key = str(data.get('user_id')), data.get('credits'), data.get('key') or gen_key()
     db["keys"][key] = {"user_id": uid, "credits": credits, "used": False}
     return jsonify({"success": True, "key": key})
+
+# --- নতুন: কী এডিট এবং ডিলিট API ---
+@app.route('/api/edit_key', methods=['POST'])
+def edit_key():
+    data = request.json
+    old_key, new_key, credits = data.get('old_key'), data.get('new_key'), int(data.get('credits'))
+    if old_key in db["keys"]:
+        if new_key and new_key != old_key:
+            db["keys"][new_key] = db["keys"].pop(old_key)
+        else:
+            new_key = old_key
+        db["keys"][new_key]["credits"] = credits
+        return jsonify({"success": True})
+    return jsonify({"success": False})
+
+@app.route('/api/delete_key', methods=['POST'])
+def delete_key():
+    key = request.json.get('key')
+    if key in db["keys"]: del db["keys"][key]
+    return jsonify({"success": True})
 
 def run_flask():
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
 
 # ==================== BOT LOGIC ====================
-async def check_channel_membership(user_id, context):
+async def check_channels(user_id, context):
     not_joined = []
     for ch in db["join_channels"]:
         if ch.get("chat_id"):
             try:
                 member = await context.bot.get_chat_member(chat_id=ch["chat_id"], user_id=user_id)
-                if member.status in ['left', 'kicked']:
-                    not_joined.append(ch)
-            except Exception as e:
-                logging.error(f"Channel check failed: {e}")
-                not_joined.append(ch)
+                if member.status in ['left', 'kicked']: not_joined.append(ch)
+            except: not_joined.append(ch)
     return not_joined
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    context.user_data.clear() 
+    context.user_data.clear()
     
-    not_joined_channels = await check_channel_membership(user_id, context)
-    if not_joined_channels:
-        buttons = []
-        for ch in not_joined_channels:
-            if ch.get("link"):
-                buttons.append([InlineKeyboardButton(f"📢 Join {ch['name']}", url=ch["link"])])
+    not_joined = await check_channels(user_id, context)
+    if not_joined:
+        buttons = [[InlineKeyboardButton(f"📢 Join {ch['name']}", url=ch["link"])] for ch in not_joined if ch.get("link")]
         buttons.append([InlineKeyboardButton("✅ Verify Joined", callback_data='verify_join')])
         await update.message.reply_text("⚠️ **Please join our channels to use this bot!**", reply_markup=InlineKeyboardMarkup(buttons))
         return
 
     user = db["users"].get(user_id)
-    if user and user.get("is_logged_in"):
+    
+    # ১. যদি ইউজার লগইন থাকে
+    if user and user.get("is_logged_in") and user.get("credits", 0) > 0:
         await show_main_menu(update, context, user['credits'])
-    else:
+        return
+
+    # ২. যদি ট্রায়াল আগে নেওয়া থাকে (শুধু লগইন এবং প্রিমিয়াম দেখাবে)
+    if user and user.get("trial_used"):
         keyboard = [
-            [InlineKeyboardButton(f"{db['settings']['trial_btn_text']} ({db['settings']['trial_credits']} Credits)", callback_data='free_trial')],
+            [InlineKeyboardButton("🔑 Login with Key", callback_data='user_login')],
             [InlineKeyboardButton(db['settings']['premium_btn_text'], url=db['settings']['premium_link'])]
         ]
-        welcome = db['settings']['welcome_text']
-        await update.message.reply_text(welcome, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        await update.message.reply_text("👋 Welcome back!\n\nYou have already used your free trial. Please login or buy premium.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        return
+
+    # ৩. নতুন ইউজার (ট্রায়াল, লগইন, প্রিমিয়াম)
+    keyboard = [
+        [InlineKeyboardButton(db['settings']['trial_btn_text'], callback_data='free_trial')],
+        [InlineKeyboardButton("🔑 Login with Key", callback_data='user_login')],
+        [InlineKeyboardButton(db['settings']['premium_btn_text'], url=db['settings']['premium_link'])]
+    ]
+    await update.message.reply_text(db['settings']['welcome_text'], reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, credits):
     keyboard = [[InlineKeyboardButton(f"🛡️ Protect APK (Credits: {credits})", callback_data='protect')]]
-    # চেক করা হচ্ছে মেসেজটি Reply না Edit
-    if update.callback_query:
-        await update.callback_query.message.edit_text(f"✅ **Login Successful!**\n\n💳 **Your Credits:** {credits}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-    else:
-        await update.message.reply_text(f"✅ **Login Successful!**\n\n💳 **Your Credits:** {credits}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+    text = f"✅ **Login Successful!**\n\n💳 **Your Credits:** {credits}"
+    if update.callback_query: await update.callback_query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+    else: await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    text = update.message.text.strip()
+    user_id, text = str(update.effective_user.id), update.message.text.strip()
     
-    not_joined_channels = await check_channel_membership(user_id, context)
-    if not_joined_channels:
-        await update.message.reply_text("⚠️ Please join our channels first using /start.")
-        return
+    if context.user_data.get('awaiting_key'):
+        key_data = db["keys"].get(text)
+        if key_data and str(key_data['user_id']) == user_id and not key_data['used']:
+            db["users"][user_id] = {"key": text, "credits": key_data['credits'], "is_logged_in": True, "trial_used": db["users"].get(user_id, {}).get("trial_used", False)}
+            db["keys"][text]["used"] = True
+            context.user_data['awaiting_key'] = False
+            await update.message.reply_text(f"🎉 **Login Successful!**\nYou have {key_data['credits']} credits.")
+            await show_main_menu(update, context, key_data['credits'])
+        else: await update.message.reply_text("❌ Invalid Key or already used.")
 
-    key_data = db["keys"].get(text)
-    if key_data and str(key_data['user_id']) == user_id and not key_data['used']:
-        credits = key_data['credits']
-        db["users"][user_id] = {"key": text, "credits": credits, "is_logged_in": True}
-        db["keys"][text]["used"] = True
-        await update.message.reply_text(f"🎉 **Login Successful!**\nYou have {credits} credits.")
-        await show_main_menu(update, context, credits)
-    else:
-        await update.message.reply_text("❌ Invalid Key or already used.")
-
-async def handle_user_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
     
     if query.data == 'verify_join':
-        not_joined = await check_channel_membership(user_id, context)
-        if not not_joined:
+        if not await check_channels(user_id, context):
             await query.edit_message_text("✅ **Verification Successful!**")
             await start(update, context)
-        else:
-            await query.edit_message_text("❌ You haven't joined all channels yet.")
-        return
-
-    if query.data == 'free_trial':
-        user = db["users"].get(user_id)
-        if user and user.get("trial_used"):
+        else: await query.edit_message_text("❌ You haven't joined all channels yet.")
+    
+    elif query.data == 'free_trial':
+        user = db["users"].get(user_id, {})
+        if user.get("trial_used"):
             await query.edit_message_text("❌ You have already used your free trial.")
             return
+        db["users"][user_id] = {"credits": db["settings"]["trial_credits"], "is_logged_in": True, "trial_used": True, "last_protect_time": 0}
+        await query.edit_message_text(f"🎁 **Free Trial Activated!**\n\nYou have {db['settings']['trial_credits']} credits.")
+        await show_main_menu(update, context, db["settings"]["trial_credits"])
         
-        trial_credits = db["settings"]["trial_credits"]
-        db["users"][user_id] = {
-            "credits": trial_credits, 
-            "is_logged_in": True, 
-            "trial_used": True,
-            "last_protect_time": 0
-        }
-        await query.edit_message_text(f"🎁 **Free Trial Activated!**\n\nYou have {trial_credits} credits.\n⚠️ Note: You can protect 1 APK every {db['settings']['trial_wait_time']} minutes.")
+    elif query.data == 'user_login':
+        context.user_data['awaiting_key'] = True
+        await query.edit_message_text("🔑 **Please enter your Key to login:**\n\n(Example: `ABCD123456`)")
         
-        keyboard = [[InlineKeyboardButton("🚀 Start BOT", callback_data='start_bot')]]
-        await query.message.reply_text("Click below to start using the bot:", reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-    
-    if query.data == 'start_bot':
-        user = db["users"].get(user_id)
-        if user:
-            # এখানে Protect APK বাটনটি কল করা হচ্ছে
-            await show_main_menu(update, context, user['credits'])
-        return
-        
-async def handle_protect_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data == 'protect':
+    elif query.data == 'protect':
         await query.edit_message_text("📤 **Please send the APK file** you want to protect.")
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    document = update.message.document
-    
-    if not document.file_name.endswith('.apk'):
-        await update.message.reply_text("❌ Please send a valid APK file.")
-        return
+    user_id, document = str(update.effective_user.id), update.message.document
+    if not document.file_name.endswith('.apk'): return await update.message.reply_text("❌ Please send a valid APK file.")
 
     user = db["users"].get(user_id)
-    if not user or user['credits'] <= 0:
-        await update.message.reply_text("❌ Not enough credits or not logged in.")
-        return
+    if not user or user.get('credits', 0) <= 0: return await update.message.reply_text("❌ Not enough credits or not logged in.")
 
-    if user.get("trial_used"):
-        current_time = time.time()
-        last_time = user.get("last_protect_time", 0)
-        wait_seconds = db["settings"]["trial_wait_time"] * 60
-        
-        if current_time - last_time < wait_seconds:
-            remaining = wait_seconds - (current_time - last_time)
-            minutes_left = int(remaining // 60)
-            seconds_left = int(remaining % 60)
+    if user.get("trial_used") and "last_protect_time" in user:
+        rem = (db["settings"]["trial_wait_time"] * 60) - (time.time() - user["last_protect_time"])
+        if rem > 0: return await update.message.reply_text(f"⏳ **Trial Limit:** Please wait **{int(rem//60)}m {int(rem%60)}s** before protecting another APK.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💎 Buy Premium", url=db['settings']['premium_link'])]]))
             
-            keyboard = [[InlineKeyboardButton("💎 Buy Premium", url=db['settings']['premium_link'])]]
-            await update.message.reply_text(
-                f"⏳ **Trial Limit:** Please wait **{minutes_left} minutes {seconds_left} seconds** before protecting another APK.", 
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-            return
-
-    context.user_data['apk_id'] = document.file_id
-    context.user_data['apk_name'] = document.file_name
-    
-    keyboard = [
-        [InlineKeyboardButton("Google Protection", callback_data='prot_google')],
-        [InlineKeyboardButton("Tencent Protection", callback_data='prot_tencent')],
-        [InlineKeyboardButton("360 Protection", callback_data='prot_360')],
-        [InlineKeyboardButton("Arm Protection", callback_data='prot_arm')],
-        [InlineKeyboardButton("⏭️ Skip Protection", callback_data='prot_skip')]
-    ]
+    context.user_data.update({'apk_id': document.file_id, 'apk_name': document.file_name})
+    keyboard = [[InlineKeyboardButton("Google", callback_data='prot_google')], [InlineKeyboardButton("Tencent", callback_data='prot_tencent')], [InlineKeyboardButton("360", callback_data='prot_360')], [InlineKeyboardButton("Arm", callback_data='prot_arm')], [InlineKeyboardButton("Skip", callback_data='prot_skip')]]
     await update.message.reply_text("🛡️ **Which protection do you want to apply?**", reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def handle_protection_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_protection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    choice = query.data
-    user_id = str(query.from_user.id)
-    
-    if choice == 'protect':
-        return
+    choice, user_id = query.data, str(query.from_user.id)
+    if choice == 'protect': return
 
-    file_id = context.user_data.get('apk_id')
-    apk_name = context.user_data.get('apk_name')
-    if not file_id:
-        await query.edit_message_text("❌ Session expired. Please send the APK again.")
-        return
+    file_id, apk_name = context.user_data.get('apk_id'), context.user_data.get('apk_name')
+    if not file_id: return await query.edit_message_text("❌ Session expired. Please send the APK again.")
 
     file = await context.bot.get_file(file_id)
     input_path = os.path.join(TEMP_DIR, apk_name)
     await file.download_to_drive(input_path)
 
-    file_size_mb = os.path.getsize(input_path) / (1024 * 1024)
-    
-    if file_size_mb < 5:
-        eta = "2-3 minutes"
-    elif file_size_mb < 15:
-        eta = "4-6 minutes"
-    else:
-        eta = "6-10 minutes"
-
+    eta = "2-3 mins" if os.path.getsize(input_path)/(1024*1024) < 5 else "4-6 mins"
     progress_msg = await query.edit_message_text(f"⏳ **Processing APK...**\n\n[□□□□□□□□□□] 0%\n⏱️ **Target Time: {eta}**")
-    
+
     executable_dir = os.path.join(BASE_DIR, "executable")
     if not os.path.exists(executable_dir):
-        with zipfile.ZipFile(os.path.join(BASE_DIR, "dpt-shell-v2.21.1.zip"), 'r') as zip_ref:
-            zip_ref.extractall(BASE_DIR)
+        with zipfile.ZipFile(os.path.join(BASE_DIR, "dpt-shell-v2.21.1.zip"), 'r') as zip_ref: zip_ref.extractall(BASE_DIR)
 
     output_name = apk_name.replace(".apk", "_signed.apk")
     generated_file = os.path.join(executable_dir, output_name)
     
     try:
         await progress_msg.edit_text(f"⏳ **Processing APK...**\n\n[■■■□□□□□□□] 30%\n⏱️ **Target Time: {eta}**")
-        
-        command = ["java", "-Xmx512m", "-XX:TieredStopAtLevel=1", "-jar", os.path.join(executable_dir, "dpt.jar"), "-f", input_path]
-        subprocess.run(command, cwd=executable_dir, capture_output=True, text=True)
+        subprocess.run(["java", "-Xmx512m", "-jar", os.path.join(executable_dir, "dpt.jar"), "-f", input_path], cwd=executable_dir, capture_output=True, text=True)
         
         if os.path.exists(generated_file):
-            zip_mapping = {
-                'prot_google': "google.zip",
-                'prot_tencent': "腾讯御安全.zip",
-                'prot_360': "360.zip",
-                'prot_arm': "arm.zip"
-            }
-
-            if choice in zip_mapping:
-                await progress_msg.edit_text(f"⏳ **Processing APK...**\n\n[■■■■■■□□□□] 60%\n⏱️ **Target Time: Almost Done...**")
-                
-                zip_to_extract = zip_mapping[choice]
-                zip_path = os.path.join(BASE_DIR, zip_to_extract)
-                
+            if choice in ['prot_google', 'prot_tencent', 'prot_360', 'prot_arm']:
+                await progress_msg.edit_text(f"⏳ **Processing APK...**\n\n[■■■■■■□□□□] 60%\n⏱️ **Almost Done**")
+                zip_map = {'prot_google': "google.zip", 'prot_tencent': "腾讯御安全.zip", 'prot_360': "360.zip", 'prot_arm': "arm.zip"}
+                zip_path = os.path.join(BASE_DIR, zip_map[choice])
                 if os.path.exists(zip_path):
-                    temp_zip_path = generated_file + ".zip"
-                    os.rename(generated_file, temp_zip_path)
-                    
+                    temp_zip = generated_file + ".zip"
+                    os.rename(generated_file, temp_zip)
                     extract_dir = os.path.join(TEMP_DIR, "inject_lib")
-                    os.makedirs(extract_dir, exist_ok=True)
-                    with zipfile.ZipFile(zip_path, 'r') as zf:
-                        zf.extractall(extract_dir)
-                    
-                    so_file = None
-                    for root, dirs, files in os.walk(extract_dir):
+                    with zipfile.ZipFile(zip_path, 'r') as zf: zf.extractall(extract_dir)
+                    for root, _, files in os.walk(extract_dir):
                         for f in files:
                             if f.endswith('.so'):
-                                so_file = os.path.join(root, f)
+                                with zipfile.ZipFile(temp_zip, 'a', zipfile.ZIP_DEFLATED) as zf: zf.write(os.path.join(root, f), arcname=f"assets/{f}")
                                 break
-                    
-                    if so_file:
-                        with zipfile.ZipFile(temp_zip_path, 'a', zipfile.ZIP_DEFLATED) as zf:
-                            zf.write(so_file, arcname=f"assets/{os.path.basename(so_file)}")
-                    
-                    os.rename(temp_zip_path, generated_file)
+                    os.rename(temp_zip, generated_file)
                     shutil.rmtree(extract_dir, ignore_errors=True)
 
-            await progress_msg.edit_text("✅ **Processing Complete!**\n\n[■■■■■■■■■■] 100%\n⏱️ **Status: Successful**")
-            await query.message.reply_document(
-                document=open(generated_file, 'rb'), 
-                filename=output_name, 
-                caption=f"✅ **Protected Successfully!**\nType: {choice}"
-            )
+            await progress_msg.edit_text("✅ **Processing Complete!**\n\n[■■■■■■■■■■] 100%")
+            await query.message.reply_document(document=open(generated_file, 'rb'), filename=output_name, caption=f"✅ **Protected Successfully!**\nType: {choice}")
             
             db["users"][user_id]["credits"] -= 1
-            if db["users"][user_id].get("trial_used"):
-                db["users"][user_id]["last_protect_time"] = time.time()
-                
+            if db["users"][user_id].get("trial_used"): db["users"][user_id]["last_protect_time"] = time.time()
             db["history"].append({"tg_id": user_id, "apk_name": output_name, "type": choice})
             await query.message.reply_text(f"💳 Remaining Credits: {db['users'][user_id]['credits']}")
             
-            os.remove(generated_file)
-            os.remove(input_path)
-            gc.collect()
-        else:
-            await progress_msg.edit_text("❌ Protection failed. Memory issue or unsupported APK.")
+            os.remove(generated_file); os.remove(input_path); gc.collect()
+        else: await progress_msg.edit_text("❌ Protection failed. Memory issue or unsupported APK.")
     except Exception as e:
-        logging.error(f"Error during protection: {e}")
+        logging.error(e)
         await progress_msg.edit_text("❌ Error occurred during protection.")
 
 def main():
-    if not BOT_TOKEN:
-        print("ERROR: BOT_TOKEN missing!")
-        return
-
+    if not BOT_TOKEN: return print("ERROR: BOT_TOKEN missing!")
     threading.Thread(target=run_flask, daemon=True).start()
-
-    application = Application.builder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(handle_user_callbacks, pattern='^(verify_join|free_trial|start_bot)$'))
-    application.add_handler(CallbackQueryHandler(handle_protect_button, pattern='^protect$'))
-    application.add_handler(CallbackQueryHandler(handle_protection_choice, pattern='^prot_'))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    app_bot = Application.builder().token(BOT_TOKEN).build()
+    
+    app_bot.add_handler(CommandHandler("start", start))
+    app_bot.add_handler(CallbackQueryHandler(handle_callbacks, pattern='^(verify_join|free_trial|user_login|protect)$'))
+    app_bot.add_handler(CallbackQueryHandler(handle_protection, pattern='^prot_'))
+    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app_bot.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     
     print("Bot and Web Server are running...")
-    application.run_polling()
+    app_bot.run_polling()
 
 if __name__ == '__main__':
     main()
