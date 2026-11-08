@@ -137,6 +137,8 @@
                 <input type="text" id="s_premium_link" placeholder="https://t.me/YourUsername">
                 <label>Free Trial Credits</label>
                 <input type="number" id="s_trial_credits" value="15">
+                <label>Trial Wait Time (Minutes)</label>
+                <input type="number" id="s_trial_wait_time" value="30">
                 <button class="btn" onclick="saveSettings()">💾 Save Settings</button>
             </div>
 
@@ -234,7 +236,12 @@
                 const res = await fetch(API_BASE + '/api/get_users');
                 const data = await res.json();
                 document.getElementById('statKeys').innerText = data.length;
-                document.getElementById('statTrialUsers').innerText = data.filter(u => u.is_trial).length;
+                
+                // ট্রায়াল ইউজার কাউন্ট
+                const trialRes = await fetch(API_BASE + '/api/get_trial_users');
+                const trialData = await trialRes.json();
+                document.getElementById('statTrialUsers').innerText = trialData.length;
+                
                 renderUsers(data);
             } catch (e) { console.error(e); toast("Failed to load data.", true); }
         }
@@ -299,6 +306,7 @@
                 document.getElementById('s_premium_btn_text').value = data.settings.premium_btn_text || "";
                 document.getElementById('s_premium_link').value = data.settings.premium_link || "";
                 document.getElementById('s_trial_credits').value = data.settings.trial_credits || 15;
+                document.getElementById('s_trial_wait_time').value = data.settings.trial_wait_time || 30;
                 renderChannels(data.channels);
             } catch (e) { console.error("Settings load failed", e); }
         }
@@ -309,11 +317,19 @@
             const premium_btn_text = document.getElementById('s_premium_btn_text').value;
             const premium_link = document.getElementById('s_premium_link').value;
             const trial_credits = document.getElementById('s_trial_credits').value;
+            const trial_wait_time = document.getElementById('s_trial_wait_time').value;
 
             try {
                 const res = await fetch(API_BASE + '/api/update_settings', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ welcome_text, trial_btn_text, premium_btn_text, premium_link, trial_credits: parseInt(trial_credits) })
+                    body: JSON.stringify({ 
+                        welcome_text, 
+                        trial_btn_text, 
+                        premium_btn_text, 
+                        premium_link, 
+                        trial_credits: parseInt(trial_credits),
+                        trial_wait_time: parseInt(trial_wait_time)
+                    })
                 });
                 if(res.ok) toast("Settings Saved Successfully!");
             } catch (e) { toast("Failed to save settings.", true); }

@@ -32,6 +32,7 @@ db = {
     "settings": {
         "premium_link": "https://t.me/YourAdminUsername",
         "trial_credits": 15,
+        "trial_wait_time": 30, # ডিফল্ট ৩০ মিনিট
         "welcome_text": "👋 Welcome to the APK Protector Bot!",
         "trial_btn_text": "🎁 Try Free Trial",
         "premium_btn_text": "💎 Buy Premium"
@@ -80,6 +81,7 @@ def update_settings():
     data = request.json
     db["settings"]["premium_link"] = data.get("premium_link", db["settings"]["premium_link"])
     db["settings"]["trial_credits"] = int(data.get("trial_credits", db["settings"]["trial_credits"]))
+    db["settings"]["trial_wait_time"] = int(data.get("trial_wait_time", db["settings"]["trial_wait_time"]))
     db["settings"]["welcome_text"] = data.get("welcome_text", db["settings"]["welcome_text"])
     db["settings"]["trial_btn_text"] = data.get("trial_btn_text", db["settings"]["trial_btn_text"])
     db["settings"]["premium_btn_text"] = data.get("premium_btn_text", db["settings"]["premium_btn_text"])
@@ -206,9 +208,8 @@ async def handle_user_callbacks(update: Update, context: ContextTypes.DEFAULT_TY
             "trial_used": True,
             "last_protect_time": 0
         }
-        await query.edit_message_text(f"🎁 **Free Trial Activated!**\n\nYou have {trial_credits} credits.\n⚠️ Note: You can protect 1 APK every 30 minutes.")
+        await query.edit_message_text(f"🎁 **Free Trial Activated!**\n\nYou have {trial_credits} credits.\n⚠️ Note: You can protect 1 APK every {db['settings']['trial_wait_time']} minutes.")
         
-        # ট্রায়াল অ্যাক্টিভেশনের পর Start বাটন
         keyboard = [[InlineKeyboardButton("🚀 Start BOT", callback_data='start_bot')]]
         await query.message.reply_text("Click below to start using the bot:", reply_markup=InlineKeyboardMarkup(keyboard))
         return
@@ -239,16 +240,20 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Not enough credits or not logged in.")
         return
 
-    # ট্রায়াল লিমিট চেক
+    # ট্রায়াল লিমিট চেক (কাস্টমাইজড টাইম)
     if user.get("trial_used"):
         current_time = time.time()
         last_time = user.get("last_protect_time", 0)
-        if current_time - last_time < 1800:
-            remaining = 1800 - (current_time - last_time)
+        wait_seconds = db["settings"]["trial_wait_time"] * 60
+        
+        if current_time - last_time < wait_seconds:
+            remaining = wait_seconds - (current_time - last_time)
             minutes_left = int(remaining // 60)
+            seconds_left = int(remaining % 60)
+            
             keyboard = [[InlineKeyboardButton("💎 Buy Premium", url=db['settings']['premium_link'])]]
             await update.message.reply_text(
-                f"⏳ **Trial Limit:** Please wait **{minutes_left} minutes** before protecting another APK.", 
+                f"⏳ **Trial Limit:** Please wait **{minutes_left} minutes {seconds_left} seconds** before protecting another APK.", 
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             return
@@ -280,7 +285,6 @@ async def handle_protection_choice(update: Update, context: ContextTypes.DEFAULT
         await query.edit_message_text("❌ Session expired. Please send the APK again.")
         return
 
-    # প্রোটেকশন শুরু (ফাইল সাইজের উপর ভিত্তি করে ETA দেওয়া হবে)
     progress_msg = await query.edit_message_text("⏳ **Processing APK...**\n\n[□□□□□□□□□□] 0%\n⏱️ Estimated time: 1-2 minutes")
     
     gc.collect()
@@ -288,7 +292,6 @@ async def handle_protection_choice(update: Update, context: ContextTypes.DEFAULT
     input_path = os.path.join(TEMP_DIR, apk_name)
     await file.download_to_drive(input_path)
 
-    # ফাইলের সাইজ চেক করে ETA আপডেট
     file_size_mb = os.path.getsize(input_path) / (1024 * 1024)
     eta_text = "1-2 minutes" if file_size_mb < 10 else ("2-3 minutes" if file_size_mb < 30 else "3-5 minutes")
     
@@ -303,7 +306,6 @@ async def handle_protection_choice(update: Update, context: ContextTypes.DEFAULT
     try:
         await progress_msg.edit_text(f"⏳ **Processing APK...**\n\n[■■■□□□□□□□] 30%\n⏱️ Estimated time: {eta_text}")
         
-        # জাভা মেমরি বাড়ানো এবং ফাস্ট প্রসেসিং কমান্ড
         command = ["java", "-Xmx512m", "-XX:+UseSerialGC", "-jar", os.path.join(executable_dir, "dpt.jar"), "-f", input_path]
         subprocess.run(command, cwd=executable_dir, capture_output=True, text=True)
         
