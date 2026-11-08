@@ -13,7 +13,6 @@ from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReactionTypeEmoji
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
-from telegram.error import InvalidToken
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
@@ -23,7 +22,7 @@ BASE_DIR = os.getcwd()
 TEMP_DIR = os.path.join(BASE_DIR, "temp")
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-# একটিভ রিঅ্যাকশন বটগুলোর অ্যাপ্লিকেশন ট্র্যাক রাখার জন্য ডিকশনারি
+# Active reaction bots tracking
 active_reaction_apps = {}
 
 db = {
@@ -31,7 +30,7 @@ db = {
     "keys": {},
     "history": [],
     "join_channels": [],
-    "reaction_bots": [], # {"token": "...", "emoji": "...", "channel_id": "..."}
+    "reaction_bots": [], # {"token": "...", "channel_id": "...", "emojis": "..."}
     "settings": {
         "premium_link": "https://t.me/YourAdminUsername",
         "trial_credits": 15,
@@ -104,24 +103,24 @@ def delete_key():
     if key in db["keys"]: del db["keys"][key]
     return jsonify({"success": True})
 
-# --- রিঅ্যাকশন বট অ্যাড এবং ভেরিফাই এপিআই (আপডেট করা হয়েছে) ---
+# --- Reaction Bot API ---
 @app.route('/api/add_reaction_bot', methods=['POST'])
 def add_reaction_bot():
     data = request.json
     token = data.get('token')
-    channel_id = data.get('channel_id')
+    channel_id = data.get('channel_id') # নতুন যুক্ত করা হয়েছে
     emojis = data.get('emojis') 
     
     if not token or not channel_id or not emojis:
         return jsonify({"success": False, "message": "All fields are required!"})
     
     try:
-        # টেলিগ্রাম বট এপিআই-তে কল করে টোকেন এবং চ্যানেল অ্যাডমিন চেক করা
+        # টোকেন চেক
         res = requests.get(f"https://api.telegram.org/bot{token}/getMe")
         if res.status_code != 200:
             return jsonify({"success": False, "message": "Invalid Bot Token!"})
             
-        # চ্যানেলে বট অ্যাডমিন কিনা চেক করা
+        # চ্যানেলে বট অ্যাডমিন কিনা চেক
         chat_res = requests.get(f"https://api.telegram.org/bot{token}/getChat?chat_id={channel_id}")
         if chat_res.status_code != 200:
             return jsonify({"success": False, "message": "Bot is not an admin in this channel or Channel ID is wrong!"})
@@ -129,12 +128,8 @@ def add_reaction_bot():
     except Exception as e:
         return jsonify({"success": False, "message": "Network error or Invalid Token."})
         
-    # ডাটাবেসে সেভ করা
     db["reaction_bots"].append({"token": token, "channel_id": channel_id, "emojis": emojis})
-    
-    # নতুন বটটি সাথে সাথে রান করা (রিস্টার্ট ছাড়াই)
     start_single_reaction_bot(token, channel_id, emojis)
-    
     return jsonify({"success": True})
 
 @app.route('/api/delete_reaction_bot', methods=['POST'])
@@ -142,18 +137,15 @@ def delete_reaction_bot():
     index = request.json.get("index")
     if 0 <= index < len(db["reaction_bots"]): 
         bot_data = db["reaction_bots"].pop(index)
-        # বটটি বন্ধ করে দেওয়া
         token = bot_data.get("token")
         if token in active_reaction_apps:
             try:
                 active_reaction_apps[token].stop()
                 del active_reaction_apps[token]
-            except:
-                pass
+            except: pass
     return jsonify({"success": True})
 
 def run_flask(): app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
-
 
 # ==================== REACTION BOT LOGIC ====================
 async def auto_react(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -161,13 +153,11 @@ async def auto_react(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     channel_id = str(update.channel_post.chat_id)
     
-    # এই বটের কনফিগারেশন খোঁজা
     for rb in db["reaction_bots"]:
+        # চেক করা হচ্ছে এই বটের টোকেন এবং চ্যানেল আইডি মিলছে কিনা
         if str(rb["channel_id"]) == channel_id and context.bot.token == rb["token"]:
             try:
-                # ইমোজি লিস্ট তৈরি এবং ReactionTypeEmoji তে কনভার্ট করা
                 emoji_list = [ReactionTypeEmoji(emoji=emoji.strip()) for emoji in rb["emojis"].split(',') if emoji.strip()]
-                
                 if emoji_list:
                     await context.bot.set_message_reaction(
                         chat_id=channel_id,
@@ -178,15 +168,12 @@ async def auto_react(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logging.error(f"Reaction failed for channel {channel_id}: {e}")
 
 def start_single_reaction_bot(token, channel_id, emojis):
-    """নির্দিষ্ট একটি রিঅ্যাকশন বট চালু করার ফাংশন"""
-    if token in active_reaction_apps:
-        return # আগে থেকেই চালু আছে
+    if token in active_reaction_apps: return
     
     try:
         rb_app = Application.builder().token(token).build()
         rb_app.add_handler(MessageHandler(filters.ALL, auto_react))
         
-        # আলাদা থ্রেডে রান করা
         def run_bot():
             rb_app.run_polling(drop_pending_updates=True)
             
@@ -199,7 +186,7 @@ def start_single_reaction_bot(token, channel_id, emojis):
         logging.error(f"Failed to start Reaction Bot for {channel_id}: {e}")
 
 
-# ==================== APK BOT LOGIC (অপরিবর্তিত) ====================
+# ==================== APK BOT LOGIC (আগের মতোই) ====================
 async def check_channels(user_id, context):
     not_joined = []
     for ch in db["join_channels"]:
@@ -367,7 +354,6 @@ def main():
     app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app_bot.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     
-    # সার্ভার চালু হওয়ার সময় ডাটাবেসে থাকা রিঅ্যাকশন বটগুলো চালু করা
     for rb in db["reaction_bots"]:
         start_single_reaction_bot(rb["token"], rb["channel_id"], rb["emojis"])
     

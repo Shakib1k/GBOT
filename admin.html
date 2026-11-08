@@ -156,15 +156,19 @@
             <div id="apksList"></div>
         </div>
 
-        <!-- Reaction Bots Page -->
+        <!-- Reaction Bots Page (Updated with Channel ID) -->
         <div id="page-reaction" class="page">
             <div class="page-title">Telegram Reaction Bots</div>
             <div class="card">
                 <h3 style="color:var(--primary); margin-bottom:15px; font-family:Orbitron;">Add New Bot</h3>
+                
                 <label>Bot Token</label>
                 <input type="text" id="rb_token" placeholder="Enter bot token">
+                
+                <!-- নতুন যুক্ত করা Channel ID -->
                 <label>Channel ID (e.g. -100123456789)</label>
                 <input type="text" id="rb_channel_id" placeholder="Enter Channel ID">
+                
                 <label>Emoji Reaction (Comma separated)</label>
                 <input type="text" id="rb_emojis" placeholder="👍, ❤️, 🔥">
                 <button class="btn" onclick="addReactionBot()">➕ Add & Verify Bot</button>
@@ -401,7 +405,7 @@
 
         async function addReactionBot() {
             const token = document.getElementById('rb_token').value;
-            const channel_id = document.getElementById('rb_channel_id').value;
+            const channel_id = document.getElementById('rb_channel_id').value; // নতুন যুক্ত
             const emojis = document.getElementById('rb_emojis').value;
             if(!token || !channel_id || !emojis) return toast("All fields required!", true);
             
@@ -409,7 +413,7 @@
             try {
                 const res = await fetch(API_BASE + '/api/add_reaction_bot', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ token, channel_id, emojis })
+                    body: JSON.stringify({ token, channel_id, emojis }) // channel_id পাঠানো হচ্ছে
                 });
                 const result = await res.json();
                 if(result.success) { 
