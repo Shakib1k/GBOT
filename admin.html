@@ -13,7 +13,6 @@
         * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
         body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; display: flex; height: 100vh; overflow: hidden; }
         
-        /* Sidebar Design */
         .sidebar { position: fixed; top: 0; left: -280px; width: 280px; height: 100vh; background: rgba(10, 15, 28, 0.98); backdrop-filter: blur(25px); border-right: 1px solid var(--border); z-index: 1000; transition: 0.3s ease; padding: 25px; display: flex; flex-direction: column; }
         .sidebar.active { left: 0; }
         .sidebar-header { display: flex; align-items: center; gap: 10px; margin-bottom: 40px; }
@@ -25,7 +24,6 @@
         .nav-item:hover, .nav-item.active { background: linear-gradient(90deg, rgba(0,229,255,0.15), rgba(157,78,221,0.15)); color: #fff; transform: translateX(5px); border-left: 3px solid var(--primary); }
         .nav-icon { width: 22px; height: 22px; fill: currentColor; }
 
-        /* Main Content */
         .main-content { flex: 1; padding: 20px; overflow-y: auto; width: 100%; }
         .topbar { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: rgba(5, 7, 10, 0.8); backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 900; border-bottom: 1px solid var(--border); margin: -20px -20px 20px -20px; }
         .menu-btn { cursor: pointer; padding: 10px; border-radius: 50%; background: rgba(255,255,255,0.05); display: flex; justify-content: center; align-items: center; }
@@ -46,13 +44,11 @@
         .btn { width: 100%; padding: 15px; border-radius: 12px; border: none; cursor: pointer; font-weight: 800; font-family: 'Orbitron', sans-serif; background: linear-gradient(135deg, var(--primary), var(--secondary)); color: #000; transition: 0.3s; font-size: 14px; }
         .btn:active { transform: scale(0.98); }
         
-        /* Stats */
         .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 30px; }
         .stat-card { background: linear-gradient(145deg, rgba(15, 22, 40, 0.9), rgba(0,0,0,0.5)); border: 1px solid var(--border); border-radius: 20px; padding: 20px; }
         .stat-label { color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
         .stat-value { color: #fff; font-family: 'Orbitron', sans-serif; font-size: 32px; font-weight: 900; margin-top: 10px; color: var(--green); }
 
-        /* List Items */
         .list-item { background: rgba(0,0,0,0.4); border: 1px solid #222; border-radius: 15px; padding: 15px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
         .list-key { font-family: 'Orbitron', monospace; font-weight: 700; font-size: 15px; color: #fff; }
         .badge { padding: 5px 12px; border-radius: 20px; font-size: 10px; font-weight: 900; text-transform: uppercase; }
@@ -64,7 +60,6 @@
         .btn-edit { background: rgba(157,78,221,0.2); color: var(--secondary); }
         .btn-del { background: rgba(255,82,82,0.2); color: var(--red); }
 
-        /* Overlays */
         #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(5px); z-index: 999; display: none; }
         #overlay.active { display: block; }
 
@@ -76,7 +71,6 @@
     </style>
 </head>
 <body>
-    <!-- Login Screen -->
     <div id="loginOverlay">
         <div class="login-card">
             <h2 style="font-family: 'Orbitron', sans-serif; color: var(--primary); margin-bottom: 30px; font-size: 24px; letter-spacing: 2px;">VEX ADMIN PRO</h2>
@@ -86,10 +80,8 @@
         </div>
     </div>
 
-    <!-- Overlay for Sidebar -->
     <div id="overlay" onclick="toggleSidebar()"></div>
 
-    <!-- Sidebar -->
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
@@ -119,7 +111,6 @@
         </div>
     </div>
 
-    <!-- Main Content -->
     <div class="main-content">
         <div class="topbar">
             <div class="menu-btn" onclick="toggleSidebar()">
@@ -128,7 +119,6 @@
             <button class="new-user-btn" onclick="nav('create', document.querySelectorAll('.nav-item')[1])">+ New User</button>
         </div>
 
-        <!-- Dashboard Page -->
         <div id="page-dashboard" class="page active">
             <div class="page-title">System Overview</div>
             <div class="stats-grid">
@@ -138,7 +128,6 @@
             </div>
         </div>
 
-        <!-- Create User Page -->
         <div id="page-create" class="page">
             <div class="page-title">Create New User</div>
             <div class="card">
@@ -152,34 +141,33 @@
             </div>
         </div>
 
-        <!-- View Users Page -->
         <div id="page-users" class="page">
             <div class="page-title">Manage Users</div>
             <div id="usersList"></div>
         </div>
 
-        <!-- View Trial Users Page -->
         <div id="page-trial" class="page">
             <div class="page-title">Trial Users</div>
             <div id="trialUsersList"></div>
         </div>
 
-        <!-- View APKs Page -->
         <div id="page-apks" class="page">
             <div class="page-title">Protected APKs History</div>
             <div id="apksList"></div>
         </div>
 
-        <!-- Reaction Bots Page (NEW) -->
+        <!-- Reaction Bots Page -->
         <div id="page-reaction" class="page">
             <div class="page-title">Telegram Reaction Bots</div>
             <div class="card">
                 <h3 style="color:var(--primary); margin-bottom:15px; font-family:Orbitron;">Add New Bot</h3>
                 <label>Bot Token</label>
                 <input type="text" id="rb_token" placeholder="Enter bot token">
-                <label>Emoji Reaction</label>
-                <input type="text" id="rb_emoji" placeholder="👍, ❤️, 🔥">
-                <button class="btn" onclick="addReactionBot()">➕ Add Reaction Bot</button>
+                <label>Channel ID (e.g. -100123456789)</label>
+                <input type="text" id="rb_channel_id" placeholder="Enter Channel ID">
+                <label>Emoji Reaction (Comma separated)</label>
+                <input type="text" id="rb_emojis" placeholder="👍, ❤️, 🔥">
+                <button class="btn" onclick="addReactionBot()">➕ Add & Verify Bot</button>
             </div>
             <div class="card">
                 <h3 style="color:var(--primary); margin-bottom:15px; font-family:Orbitron;">Active Reaction Bots</h3>
@@ -187,7 +175,6 @@
             </div>
         </div>
 
-        <!-- Settings Page -->
         <div id="page-settings" class="page">
             <div class="page-title">App Maintenance & Settings</div>
             
@@ -237,7 +224,6 @@
         const ADMIN_PASSWORD = "Shakib.12"; 
         const API_BASE = window.location.origin; 
 
-        // --- Sidebar Toggle Logic ---
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('active');
             document.getElementById('overlay').classList.toggle('active');
@@ -274,7 +260,6 @@
             document.getElementById('page-' + page).classList.add('active'); 
             if(el) el.classList.add('active');
             
-            // Auto close sidebar on mobile after clicking
             if(window.innerWidth < 768) toggleSidebar();
 
             if(page === 'users') loadData();
@@ -404,7 +389,8 @@
                 container.innerHTML = data.reaction_bots.map((rb, i) => `
                     <div class="list-item">
                         <div>
-                            <div style="font-weight:bold; color:#fff; font-size:14px;">Emoji: ${rb.emoji}</div>
+                            <div style="font-weight:bold; color:#fff; font-size:14px;">Emoji: ${rb.emojis}</div>
+                            <div style="font-size:10px; color:var(--muted);">Channel: ${rb.channel_id}</div>
                             <div style="font-size:10px; color:var(--muted);">Token: ${rb.token.substring(0,10)}...</div>
                         </div>
                         <button class="badge warn" onclick="deleteReactionBot(${i})" style="cursor:pointer; border:none;">Delete</button>
@@ -415,18 +401,25 @@
 
         async function addReactionBot() {
             const token = document.getElementById('rb_token').value;
-            const emoji = document.getElementById('rb_emoji').value;
-            if(!token || !emoji) return toast("Token and Emoji required!", true);
+            const channel_id = document.getElementById('rb_channel_id').value;
+            const emojis = document.getElementById('rb_emojis').value;
+            if(!token || !channel_id || !emojis) return toast("All fields required!", true);
+            
+            toast("Verifying Bot... Please wait.", false);
             try {
                 const res = await fetch(API_BASE + '/api/add_reaction_bot', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ token, emoji })
+                    body: JSON.stringify({ token, channel_id, emojis })
                 });
-                if(res.ok) { 
-                    toast("Bot Added!"); 
+                const result = await res.json();
+                if(result.success) { 
+                    toast("Bot Verified and Added!"); 
                     loadReactionBots(); 
                     document.getElementById('rb_token').value = ""; 
-                    document.getElementById('rb_emoji').value = "";
+                    document.getElementById('rb_channel_id').value = ""; 
+                    document.getElementById('rb_emojis').value = "";
+                } else {
+                    alert(result.message || "Failed to add bot.");
                 }
             } catch (e) { toast("Failed to add bot.", true); }
         }

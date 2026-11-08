@@ -27,7 +27,7 @@ db = {
     "keys": {},
     "history": [],
     "join_channels": [],
-    "reaction_bots": [], # রিঅ্যাকশন বটের লিস্ট
+    "reaction_bots": [], # {"token": "...", "emoji": "...", "channel_id": "..."}
     "settings": {
         "premium_link": "https://t.me/YourAdminUsername",
         "trial_credits": 15,
@@ -44,7 +44,6 @@ def gen_key():
 app = Flask(__name__, template_folder='.')
 CORS(app)
 
-# --- এপিআই রুট ---
 @app.route('/admin')
 def admin_page(): return render_template('admin.html')
 
@@ -101,10 +100,28 @@ def delete_key():
     if key in db["keys"]: del db["keys"][key]
     return jsonify({"success": True})
 
+# --- রিঅ্যাকশন বট অ্যাড এবং ভেরিফাই এপিআই ---
 @app.route('/api/add_reaction_bot', methods=['POST'])
 def add_reaction_bot():
     data = request.json
-    db["reaction_bots"].append({"token": data.get("token"), "emoji": data.get("emoji")})
+    token = data.get('token')
+    channel_id = data.get('channel_id')
+    emojis = data.get('emojis') # কমা দিয়ে আলাদা করা ইমোজি (যেমন: 👍,❤️)
+    
+    if not token or not channel_id or not emojis:
+        return jsonify({"success": False, "message": "All fields are required!"})
+    
+    # এখানে টোকেন ভেরিফাই করা হচ্ছে
+    try:
+        # টেলিগ্রাম বট এপিআই-তে কল করে টোকেন চেক করা
+        import requests
+        res = requests.get(f"https://api.telegram.org/bot{token}/getMe")
+        if res.status_code != 200:
+            return jsonify({"success": False, "message": "Invalid Bot Token!"})
+    except Exception as e:
+        return jsonify({"success": False, "message": "Network error or Invalid Token."})
+        
+    db["reaction_bots"].append({"token": token, "channel_id": channel_id, "emojis": emojis})
     return jsonify({"success": True})
 
 @app.route('/api/delete_reaction_bot', methods=['POST'])
@@ -270,13 +287,30 @@ async def handle_protection(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(e)
         await progress_msg.edit_text("❌ Error occurred during protection.")
 
+# ==================== REACTION BOT LOGIC ====================
+async def auto_react(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.channel_post: return # শুধু চ্যানেলের মেসেজে কাজ করবে
+    
+    channel_id = str(update.channel_post.chat_id)
+    
+    for rb in db["reaction_bots"]:
+        if str(rb["channel_id"]) == channel_id:
+            try:
+                # ইমোজি লিস্ট থেকে একটি করে রিঅ্যাকশন দেওয়া হবে
+                emoji_list = [emoji.strip() for emoji in rb["emojis"].split(',')]
+                await context.bot.set_message_reaction(
+                    chat_id=channel_id,
+                    message_id=update.channel_post.message_id,
+                    reaction=emoji_list
+                )
+            except Exception as e:
+                logging.error(f"Reaction failed: {e}")
+
 def main():
     if not BOT_TOKEN: return print("ERROR: BOT_TOKEN missing!")
     
-    # Start Web Server for Admin Panel
     threading.Thread(target=run_flask, daemon=True).start()
     
-    # Start Main APK Bot
     app_bot = Application.builder().token(BOT_TOKEN).build()
     app_bot.add_handler(CommandHandler("start", start))
     app_bot.add_handler(CallbackQueryHandler(handle_callbacks, pattern='^(verify_join|free_trial|user_login|protect)$'))
@@ -284,37 +318,18 @@ def main():
     app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app_bot.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     
-    # Start Reaction Bots (If any are added via Admin Panel)
+    # স্টার্ট রিঅ্যাকশন বটস (যদি অ্যাডমিন প্যানেল থেকে যোগ করা হয়)
     for rb in db["reaction_bots"]:
         try:
             rb_app = Application.builder().token(rb["token"]).build()
-            rb_app.add_handler(MessageHandler(filters.ALL, auto_react)) # Auto react to all messages
+            rb_app.add_handler(MessageHandler(filters.ALL, auto_react))
             threading.Thread(target=rb_app.run_polling, daemon=True).start()
-            print(f"Reaction Bot started for emoji: {rb['emoji']}")
+            print(f"Reaction Bot started for channel: {rb['channel_id']}")
         except Exception as e:
             print(f"Failed to start Reaction Bot: {e}")
     
     print("Main Bot and Web Server are running...")
     app_bot.run_polling()
-
-# ==================== REACTION BOT LOGIC ====================
-async def auto_react(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message: return
-    channel_id = db.get("reaction_channel_id")
-    if not channel_id: return
-    
-    # Check if message is from the specific channel
-    if str(update.message.chat_id) == str(channel_id):
-        for rb in db["reaction_bots"]:
-            # Match bot token with specific emoji? Actually, the bot itself is running, so it reacts.
-            try:
-                await context.bot.set_message_reaction(
-                    chat_id=update.message.chat_id,
-                    message_id=update.message.message_id,
-                    reaction=rb["emoji"]
-                )
-            except Exception as e:
-                logging.error(f"Reaction failed for {rb['emoji']}: {e}")
 
 if __name__ == '__main__':
     main()
