@@ -419,7 +419,7 @@
                     document.getElementById('rb_channel_id').value = ""; 
                     document.getElementById('rb_emojis').value = "";
                 } else {
-                    alert(result.message || "Failed to add bot.");
+                    alert(result.message || "Failed to add bot. Make sure bot is admin in the channel.");
                 }
             } catch (e) { toast("Failed to add bot.", true); }
         }
