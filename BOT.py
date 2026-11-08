@@ -32,7 +32,7 @@ db = {
     "settings": {
         "premium_link": "https://t.me/YourAdminUsername",
         "trial_credits": 15,
-        "trial_wait_time": 30, # ডিফল্ট ৩০ মিনিট
+        "trial_wait_time": 30,
         "welcome_text": "👋 Welcome to the APK Protector Bot!",
         "trial_btn_text": "🎁 Try Free Trial",
         "premium_btn_text": "💎 Buy Premium"
@@ -240,7 +240,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Not enough credits or not logged in.")
         return
 
-    # ট্রায়াল লিমিট চেক (কাস্টমাইজড টাইম)
     if user.get("trial_used"):
         current_time = time.time()
         last_time = user.get("last_protect_time", 0)
@@ -285,15 +284,22 @@ async def handle_protection_choice(update: Update, context: ContextTypes.DEFAULT
         await query.edit_message_text("❌ Session expired. Please send the APK again.")
         return
 
-    progress_msg = await query.edit_message_text("⏳ **Processing APK...**\n\n[□□□□□□□□□□] 0%\n⏱️ Estimated time: 1-2 minutes")
-    
-    gc.collect()
+    # ডাইনামিক ETA এবং ফাইল সাইজ চেক
     file = await context.bot.get_file(file_id)
     input_path = os.path.join(TEMP_DIR, apk_name)
     await file.download_to_drive(input_path)
 
     file_size_mb = os.path.getsize(input_path) / (1024 * 1024)
-    eta_text = "1-2 minutes" if file_size_mb < 10 else ("2-3 minutes" if file_size_mb < 30 else "3-5 minutes")
+    
+    # ফাইলের সাইজ অনুযায়ী বাস্তবসম্মত ETA নির্ধারণ
+    if file_size_mb < 5:
+        eta = "2-3 minutes"
+    elif file_size_mb < 15:
+        eta = "4-6 minutes"
+    else:
+        eta = "6-10 minutes"
+
+    progress_msg = await query.edit_message_text(f"⏳ **Processing APK...**\n\n[□□□□□□□□□□] 0%\n⏱️ **Target Time: {eta}**")
     
     executable_dir = os.path.join(BASE_DIR, "executable")
     if not os.path.exists(executable_dir):
@@ -304,9 +310,10 @@ async def handle_protection_choice(update: Update, context: ContextTypes.DEFAULT
     generated_file = os.path.join(executable_dir, output_name)
     
     try:
-        await progress_msg.edit_text(f"⏳ **Processing APK...**\n\n[■■■□□□□□□□] 30%\n⏱️ Estimated time: {eta_text}")
+        await progress_msg.edit_text(f"⏳ **Processing APK...**\n\n[■■■□□□□□□□] 30%\n⏱️ **Target Time: {eta}**")
         
-        command = ["java", "-Xmx512m", "-XX:+UseSerialGC", "-jar", os.path.join(executable_dir, "dpt.jar"), "-f", input_path]
+        # জাভা মেমরি এবং ফাস্ট প্রসেসিং কমান্ড
+        command = ["java", "-Xmx512m", "-XX:TieredStopAtLevel=1", "-jar", os.path.join(executable_dir, "dpt.jar"), "-f", input_path]
         subprocess.run(command, cwd=executable_dir, capture_output=True, text=True)
         
         if os.path.exists(generated_file):
@@ -318,7 +325,7 @@ async def handle_protection_choice(update: Update, context: ContextTypes.DEFAULT
             }
 
             if choice in zip_mapping:
-                await progress_msg.edit_text(f"⏳ **Processing APK...**\n\n[■■■■■■□□□□] 60%\n⏱️ Estimated time: almost done")
+                await progress_msg.edit_text(f"⏳ **Processing APK...**\n\n[■■■■■■□□□□] 60%\n⏱️ **Target Time: Almost Done...**")
                 
                 zip_to_extract = zip_mapping[choice]
                 zip_path = os.path.join(BASE_DIR, zip_to_extract)
@@ -346,7 +353,7 @@ async def handle_protection_choice(update: Update, context: ContextTypes.DEFAULT
                     os.rename(temp_zip_path, generated_file)
                     shutil.rmtree(extract_dir, ignore_errors=True)
 
-            await progress_msg.edit_text("✅ **Processing Complete!**\n\n[■■■■■■■■■■] 100%")
+            await progress_msg.edit_text("✅ **Processing Complete!**\n\n[■■■■■■■■■■] 100%\n⏱️ **Status: Successful**")
             await query.message.reply_document(
                 document=open(generated_file, 'rb'), 
                 filename=output_name, 
