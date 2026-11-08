@@ -15,14 +15,12 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 # Logging Setup
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# Environment Variables (Render-এ সেট করবেন)
+# Environment Variables
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-# ⚠️ আপনার GitLab টোকেন সরাসরি এখানে দেওয়া হলো
+# ⚠️ আপনার GitLab টোকেন সরাসরি এখানে বসানো হলো
 GITLAB_TOKEN = "glpat-6HhMaa8p9Q84RAncGnbLCGM6MQpvOjEKdTpvODlveA8.01.17007rkbm"
 GITLAB_PROJECT_ID = "Shakib1k%2Fsk-bd"
 GITLAB_FILE_PATH = "db.json"
-
-ADMIN_ID = 7058712225 
 
 BASE_DIR = os.getcwd()
 TEMP_DIR = os.path.join(BASE_DIR, "temp")
@@ -36,6 +34,7 @@ def read_db():
         response = requests.get(url, headers=headers)
         if response.status_code == 200:
             content = base64.b64decode(response.json()['content']).decode('utf-8')
+            # যদি ডাটাবেস ফাঁকা থাকে, তবে ডিফল্ট স্ট্রাকচার দেবে
             return json.loads(content) if content else {"users": {}, "keys": {}, "history": []}
     except Exception as e:
         logging.error(f"GitLab Read Error: {e}")
@@ -59,7 +58,7 @@ def write_db(data):
 def gen_key():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
 
-# ==================== FLASK WEB API ====================
+# ==================== FLASK WEB API (For Admin Panel) ====================
 app = Flask(__name__, template_folder='.')
 
 @app.route('/admin')
@@ -69,8 +68,9 @@ def admin_page():
 @app.route('/api/get_users')
 def get_users():
     db = read_db()
+    keys = db.get("keys", {})
     users = []
-    for k, v in db.get("keys", {}).items():
+    for k, v in keys.items():
         users.append({
             "user_id": v.get("user_id"), 
             "key": k, 
@@ -102,19 +102,12 @@ def run_flask():
 
 # ==================== BOT LOGIC ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    user_id = str(update.effective_user.id)
     context.user_data.clear() 
     
-    if user_id == ADMIN_ID:
-        await update.message.reply_text(
-            "👑 **Admin Access Detected!**\n\nPlease open your admin panel to manage users:\n"
-            "🌐 **Link:** `https://gbot-3.onrender.com/admin`",
-            parse_mode='Markdown'
-        )
-        return
-
     db = read_db()
-    user = db.get("users", {}).get(str(user_id))
+    user = db.get("users", {}).get(user_id)
+    
     if user and user.get("is_logged_in"):
         await show_main_menu(update, context, user['credits'])
     else:
@@ -125,19 +118,19 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, cre
     await update.message.reply_text("✅ **Login Successful!**\n\nClick below to protect your APK.", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id == ADMIN_ID: return
+    user_id = str(update.effective_user.id)
     text = update.message.text.strip()
     
     db = read_db()
     key_data = db.get("keys", {}).get(text)
     
-    if key_data and str(key_data['user_id']) == str(user_id) and not key_data['used']:
+    if key_data and str(key_data['user_id']) == user_id and not key_data['used']:
         credits = key_data['credits']
         if "users" not in db: db["users"] = {}
-        db["users"][str(user_id)] = {"key": text, "credits": credits, "is_logged_in": True}
+        db["users"][user_id] = {"key": text, "credits": credits, "is_logged_in": True}
         db["keys"][text]["used"] = True
         write_db(db)
+        
         await update.message.reply_text(f"🎉 **Login Successful!**\nYou have {credits} credits.")
         await show_main_menu(update, context, credits)
     else:
@@ -145,11 +138,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    if user_id == str(ADMIN_ID):
-        await update.message.reply_text("👑 Admin, please use the Web Panel to protect APKs.")
-        return
-
     document = update.message.document
+    
     if not document.file_name.endswith('.apk'):
         await update.message.reply_text("❌ Please send a valid APK file.")
         return
