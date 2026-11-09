@@ -7,11 +7,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
         :root { 
-            --bg: #05070A; --card: rgba(15, 22, 40, 0.7); --primary: #00E5FF; --secondary: #9D4EDD; 
-            --green: #00D084; --red: #FF5252; --yellow: #FFAA00; --text: #E2E8F0; --muted: #94A3B8; --border: rgba(0,229,255,0.15); 
+            --bg: #030303; --card: rgba(12, 12, 12, 0.88); --primary: #ff1744; --secondary: #b00020; 
+            --green: #00d084; --red: #ff1744; --yellow: #ffb300; --text: #f5f5f5; --muted: #9a9a9a; --border: rgba(255,23,68,0.32); 
         }
         * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; display: flex; height: 100vh; overflow: hidden; }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; display: flex; height: 100vh; overflow: hidden; border: 1px solid #ff1744; box-shadow: inset 0 0 35px rgba(255,23,68,0.08); }
         
         .sidebar { position: fixed; top: 0; left: -280px; width: 280px; height: 100vh; background: rgba(10, 15, 28, 0.98); backdrop-filter: blur(25px); border-right: 1px solid var(--border); z-index: 1000; transition: 0.3s ease; padding: 25px; display: flex; flex-direction: column; }
         .sidebar.active { left: 0; }
@@ -25,7 +25,7 @@
         .nav-icon { width: 22px; height: 22px; fill: currentColor; }
 
         .main-content { flex: 1; padding: 20px; overflow-y: auto; width: 100%; }
-        .topbar { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: rgba(5, 7, 10, 0.8); backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 900; border-bottom: 1px solid var(--border); margin: -20px -20px 20px -20px; }
+        .topbar { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: rgba(5, 5, 5, 0.92); backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 900; border-bottom: 1px solid var(--border); margin: -20px -20px 20px -20px; }
         .menu-btn { cursor: pointer; padding: 10px; border-radius: 50%; background: rgba(255,255,255,0.05); display: flex; justify-content: center; align-items: center; }
         .menu-btn svg { width: 24px; height: 24px; fill: #fff; }
         .new-user-btn { background: linear-gradient(135deg, #FF416C, #FF4B2B); color: #fff; padding: 10px 20px; border-radius: 20px; font-weight: 800; font-size: 12px; border: none; cursor: pointer; box-shadow: 0 4px 15px rgba(255, 65, 108, 0.4); }
@@ -36,16 +36,16 @@
         
         .page-title { font-family: 'Orbitron', sans-serif; font-size: 24px; margin-bottom: 25px; color: #fff; font-weight: 900; letter-spacing: 1px; }
         
-        .card { background: var(--card); backdrop-filter: blur(20px); border: 1px solid var(--border); border-radius: 20px; padding: 25px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+        .card { background: var(--card); backdrop-filter: blur(20px); border: 1px solid rgba(255,23,68,0.30); border-radius: 20px; padding: 25px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
         label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
         input, select { width: 100%; padding: 15px; background: rgba(0,0,0,0.5); border: 1px solid #333; border-radius: 12px; color: #fff; outline: none; margin-bottom: 15px; font-size: 14px; }
         input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0,229,255,0.1); }
         
-        .btn { width: 100%; padding: 15px; border-radius: 12px; border: none; cursor: pointer; font-weight: 800; font-family: 'Orbitron', sans-serif; background: linear-gradient(135deg, var(--primary), var(--secondary)); color: #000; transition: 0.3s; font-size: 14px; }
+        .btn { width: 100%; padding: 15px; border-radius: 12px; border: 1px solid #ff1744; cursor: pointer; font-weight: 800; font-family: 'Orbitron', sans-serif; background: linear-gradient(135deg, #ff1744, #8b0018); color: #fff; transition: 0.3s; font-size: 14px; }
         .btn:active { transform: scale(0.98); }
         
         .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 30px; }
-        .stat-card { background: linear-gradient(145deg, rgba(15, 22, 40, 0.9), rgba(0,0,0,0.5)); border: 1px solid var(--border); border-radius: 20px; padding: 20px; }
+        .stat-card { background: linear-gradient(145deg, rgba(22,8,10,0.94), rgba(0,0,0,0.72)); border: 1px solid rgba(255,23,68,0.28); border-radius: 20px; padding: 20px; }
         .stat-label { color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
         .stat-value { color: #fff; font-family: 'Orbitron', sans-serif; font-size: 32px; font-weight: 900; margin-top: 10px; color: var(--green); }
 
@@ -116,7 +116,7 @@
             <div class="menu-btn" onclick="toggleSidebar()">
                 <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
             </div>
-            <button class="new-user-btn" onclick="nav('create', document.querySelectorAll('.nav-item')[1])">+ New User</button>
+            <div style="display:flex;gap:10px;align-items:center;"><button class="new-user-btn" onclick="nav('create', document.querySelectorAll('.nav-item')[1])">+ New User</button><button class="act-btn btn-del" onclick="logout()">Logout</button></div>
         </div>
 
         <div id="page-dashboard" class="page active">
@@ -221,7 +221,6 @@
     <div id="toast">Saved!</div>
 
     <script>
-        const ADMIN_PASSWORD = "Shakib.12"; 
         const API_BASE = window.location.origin; 
 
         function toggleSidebar() {
@@ -241,18 +240,41 @@
             });
         });
 
-        function login() {
+        async function login() {
             const pass = document.getElementById('loginPass').value;
-            if (pass !== ADMIN_PASSWORD) { alert("Wrong Password!"); return; }
-            sessionStorage.setItem('adminAuth', 'true');
-            document.getElementById('loginOverlay').style.display = 'none';
-            loadData(); loadSettings(); 
+            if (!pass) return alert("Enter admin password.");
+            try {
+                const res = await fetch(API_BASE + '/api/login', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({password: pass})
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) return alert(data.message || "Wrong Password!");
+                sessionStorage.setItem('adminAuth', 'true');
+                document.getElementById('loginOverlay').style.display = 'none';
+                loadData(); loadSettings();
+            } catch (e) { alert("Server connection failed."); }
         }
 
-        if (sessionStorage.getItem('adminAuth') === 'true') {
-            document.getElementById('loginOverlay').style.display = 'none';
-            loadData(); loadSettings();
+        async function checkSession() {
+            try {
+                const res = await fetch(API_BASE + '/api/session');
+                const data = await res.json();
+                if (data.authenticated) {
+                    sessionStorage.setItem('adminAuth', 'true');
+                    document.getElementById('loginOverlay').style.display = 'none';
+                    loadData(); loadSettings();
+                }
+            } catch (e) {}
         }
+
+        async function logout() {
+            try { await fetch(API_BASE + '/api/logout', {method:'POST'}); } catch (e) {}
+            sessionStorage.removeItem('adminAuth');
+            location.reload();
+        }
+
+        checkSession();
 
         function nav(page, el) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
