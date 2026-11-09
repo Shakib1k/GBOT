@@ -1,0 +1,8 @@
+.env
+bot_database.json
+*.session
+*.session-journal
+*.session-wal
+*.session-shm
+__pycache__/
+temp/
