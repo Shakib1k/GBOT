@@ -11,7 +11,7 @@ import time
 import requests
 from flask import Flask, request, jsonify, render_template, session
 from flask_cors import CORS
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReactionTypeEmoji
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, TypeHandler
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -75,6 +75,9 @@ def admin_logout():
 @app.route("/api/session")
 def admin_session():
     return jsonify({"authenticated": bool(session.get("admin_authenticated"))})
+
+@app.route('/health')
+def health(): return jsonify({'status': 'ok'})
 
 @app.route('/admin')
 def admin_page(): return render_template('admin.html')
@@ -193,10 +196,10 @@ def react_message_api():
     if not token or not channel_id or not message_id or not emojis:
         return jsonify({"success": False, "message": "token, channel_id, message_id and emojis are required."}), 400
     try:
-        reaction = [ReactionTypeEmoji(emoji=e.strip()) for e in emojis.split(",") if e.strip()]
+        reaction = [{"type": "emoji", "emoji": e.strip()} for e in emojis.split(",") if e.strip()]
         result = requests.post(
             f"https://api.telegram.org/bot{token}/setMessageReaction",
-            json={"chat_id": channel_id, "message_id": int(message_id), "reaction": [{"type": "emoji", "emoji": e.emoji} for e in reaction]},
+            json={"chat_id": channel_id, "message_id": int(message_id), "reaction": reaction, "is_big": False},
             timeout=15,
         )
         payload = result.json()
@@ -222,14 +225,20 @@ async def auto_react(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if str(rb.get("channel_id")) != channel_id or context.bot.token != rb.get("token"):
             continue
         try:
-            emoji_list = [ReactionTypeEmoji(emoji=e.strip()) for e in str(rb.get("emojis", "")).split(',') if e.strip()]
-            if emoji_list:
-                await context.bot.set_message_reaction(
-                    chat_id=message.chat_id,
-                    message_id=message.message_id,
-                    reaction=emoji_list,
-                )
-                logging.info("Reaction sent: channel=%s message=%s emojis=%s", channel_id, message.message_id, rb.get("emojis"))
+            emojis = [e.strip() for e in str(rb.get("emojis", "")).split(',') if e.strip()]
+            if emojis:
+                api_url = f"https://api.telegram.org/bot{context.bot.token}/setMessageReaction"
+                payload = {
+                    "chat_id": message.chat_id,
+                    "message_id": message.message_id,
+                    "reaction": [{"type": "emoji", "emoji": emoji} for emoji in emojis],
+                    "is_big": False,
+                }
+                response = requests.post(api_url, json=payload, timeout=15)
+                result = response.json()
+                if not response.ok or not result.get("ok"):
+                    raise RuntimeError(result.get("description", "Telegram rejected the reaction"))
+                logging.info("Reaction sent: channel=%s message=%s emojis=%s", channel_id, message.message_id, emojis)
         except Exception as e:
             logging.exception("Reaction failed for channel %s message %s: %s", channel_id, message.message_id, e)
 

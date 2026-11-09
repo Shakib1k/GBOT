@@ -9,15 +9,16 @@ import shutil
 import gc
 import time
 import requests
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, session
 from flask_cors import CORS
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReactionTypeEmoji
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, TypeHandler
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_ID = 7058712225 
+ADMIN_ID = 7058712225
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 BASE_DIR = os.getcwd()
 TEMP_DIR = os.path.join(BASE_DIR, "temp")
 os.makedirs(TEMP_DIR, exist_ok=True)
@@ -46,8 +47,37 @@ db = {
 def gen_key():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
 
-app = Flask(__name__, template_folder='.')
+app = Flask(__name__, template_folder=".")
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or (BOT_TOKEN or "reaction-bot") + "::" + (ADMIN_PASSWORD or "change-me")
 CORS(app)
+
+@app.before_request
+def protect_admin_api():
+    if request.path.startswith("/api/") and request.path not in ("/api/login", "/api/session"):
+        if not session.get("admin_authenticated"):
+            return jsonify({"success": False, "message": "Unauthorized"}), 401
+
+@app.route("/api/login", methods=["POST"])
+def admin_login():
+    password = (request.json or {}).get("password", "")
+    if not ADMIN_PASSWORD:
+        return jsonify({"success": False, "message": "ADMIN_PASSWORD is not configured on the server."}), 500
+    if password != ADMIN_PASSWORD:
+        return jsonify({"success": False, "message": "Wrong password."}), 401
+    session["admin_authenticated"] = True
+    return jsonify({"success": True})
+
+@app.route("/api/logout", methods=["POST"])
+def admin_logout():
+    session.clear()
+    return jsonify({"success": True})
+
+@app.route("/api/session")
+def admin_session():
+    return jsonify({"authenticated": bool(session.get("admin_authenticated"))})
+
+@app.route('/health')
+def health(): return jsonify({'status': 'ok'})
 
 @app.route('/admin')
 def admin_page(): return render_template('admin.html')
@@ -108,96 +138,131 @@ def delete_key():
 # --- Reaction Bot API ---
 @app.route('/api/add_reaction_bot', methods=['POST'])
 def add_reaction_bot():
-    data = request.json
-    token = data.get('token')
-    channel_id = data.get('channel_id')
-    emojis = data.get('emojis') 
-    
+    data = request.json or {}
+    token = str(data.get('token') or '').strip()
+    channel_id = str(data.get('channel_id') or '').strip()
+    emojis = str(data.get('emojis') or '').strip()
+
     if not token or not channel_id or not emojis:
-        return jsonify({"success": False, "message": "All fields are required!"})
-    
+        return jsonify({"success": False, "message": "Bot token, Channel ID and emoji are required."}), 400
+
     try:
-        res = requests.get(f"https://api.telegram.org/bot{token}/getMe")
-        if res.status_code != 200:
-            return jsonify({"success": False, "message": "Invalid Bot Token!"})
-            
-        chat_res = requests.get(f"https://api.telegram.org/bot{token}/getChat?chat_id={channel_id}")
-        if chat_res.status_code != 200:
-            return jsonify({"success": False, "message": "Bot is not an admin in this channel or Channel ID is wrong!"})
-            
-    except Exception as e:
-        return jsonify({"success": False, "message": "Network error or Invalid Token."})
-        
+        me_res = requests.get(f"https://api.telegram.org/bot{token}/getMe", timeout=15)
+        me = me_res.json() if me_res.ok else {}
+        if not me_res.ok or not me.get("ok"):
+            return jsonify({"success": False, "message": "Invalid Bot Token."}), 400
+
+        chat_res = requests.get(f"https://api.telegram.org/bot{token}/getChat", params={"chat_id": channel_id}, timeout=15)
+        if not chat_res.ok or not chat_res.json().get("ok"):
+            return jsonify({"success": False, "message": "Channel ID is wrong or the bot cannot access this channel."}), 400
+
+        member_res = requests.get(
+            f"https://api.telegram.org/bot{token}/getChatMember",
+            params={"chat_id": channel_id, "user_id": me["result"]["id"]}, timeout=15
+        )
+        member = member_res.json() if member_res.ok else {}
+        status = member.get("result", {}).get("status")
+        if status not in ("administrator", "creator"):
+            return jsonify({"success": False, "message": "Make this bot an administrator in the channel first."}), 400
+    except requests.RequestException as e:
+        logging.error("Reaction bot verification failed: %s", e)
+        return jsonify({"success": False, "message": "Telegram API/network error while verifying the bot."}), 502
+
+    # Replace an existing entry for the same token+channel instead of creating duplicates.
+    db["reaction_bots"] = [rb for rb in db["reaction_bots"] if not (rb.get("token") == token and str(rb.get("channel_id")) == channel_id)]
     db["reaction_bots"].append({"token": token, "channel_id": channel_id, "emojis": emojis})
-    
-    # নতুন বটটি সাথে সাথে চালু করা
     start_single_reaction_bot(token, channel_id, emojis)
-    
-    return jsonify({"success": True})
+    return jsonify({"success": True, "message": "Reaction bot added and started."})
 
 @app.route('/api/delete_reaction_bot', methods=['POST'])
 def delete_reaction_bot():
-    index = request.json.get("index")
-    if 0 <= index < len(db["reaction_bots"]): 
+    index = int((request.json or {}).get("index", -1))
+    if 0 <= index < len(db["reaction_bots"]):
         bot_data = db["reaction_bots"].pop(index)
         token = bot_data.get("token")
         if token in active_reaction_apps:
-            try:
-                # থ্রেড বন্ধ করা
-                active_reaction_apps[token]['stop_event'].set()
-                del active_reaction_apps[token]
-            except Exception as e:
-                logging.error(f"Error stopping bot: {e}")
+            active_reaction_apps[token]['stop_event'].set()
+            active_reaction_apps.pop(token, None)
     return jsonify({"success": True})
 
-def run_flask(): app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
+@app.route('/api/react_message', methods=['POST'])
+def react_message_api():
+    """Immediately react to a specific message. Useful for messages sent/forwarded by a bot."""
+    data = request.json or {}
+    token = str(data.get("token") or "").strip()
+    channel_id = str(data.get("channel_id") or "").strip()
+    message_id = data.get("message_id")
+    emojis = str(data.get("emojis") or "").strip()
+    if not token or not channel_id or not message_id or not emojis:
+        return jsonify({"success": False, "message": "token, channel_id, message_id and emojis are required."}), 400
+    try:
+        reaction = [{"type": "emoji", "emoji": e.strip()} for e in emojis.split(",") if e.strip()]
+        result = requests.post(
+            f"https://api.telegram.org/bot{token}/setMessageReaction",
+            json={"chat_id": channel_id, "message_id": int(message_id), "reaction": reaction, "is_big": False},
+            timeout=15,
+        )
+        payload = result.json()
+        if not result.ok or not payload.get("ok"):
+            return jsonify({"success": False, "message": payload.get("description", "Telegram rejected the reaction.")}), 400
+        return jsonify({"success": True})
+    except (ValueError, requests.RequestException) as e:
+        logging.error("Direct reaction failed: %s", e)
+        return jsonify({"success": False, "message": "Could not send the reaction."}), 400
+
+def run_flask():
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
 
 # ==================== REACTION BOT LOGIC ====================
 async def auto_react(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.channel_post: return
-    
-    channel_id = str(update.channel_post.chat_id)
-    
+    """React to new or edited channel posts received by the reaction bot."""
+    message = update.channel_post or update.edited_channel_post
+    if not message:
+        return
+
+    channel_id = str(message.chat_id)
     for rb in db["reaction_bots"]:
-        # চেক করা হচ্ছে এই বটের টোকেন এবং চ্যানেল আইডি মিলছে কিনা
-        if str(rb["channel_id"]) == channel_id and context.bot.token == rb["token"]:
-            try:
-                emoji_list = [ReactionTypeEmoji(emoji=emoji.strip()) for emoji in rb["emojis"].split(',') if emoji.strip()]
-                if emoji_list:
-                    await context.bot.set_message_reaction(
-                        chat_id=channel_id,
-                        message_id=update.channel_post.message_id,
-                        reaction=emoji_list
-                    )
-            except Exception as e:
-                logging.error(f"Reaction failed for channel {channel_id}: {e}")
+        if str(rb.get("channel_id")) != channel_id or context.bot.token != rb.get("token"):
+            continue
+        try:
+            emojis = [e.strip() for e in str(rb.get("emojis", "")).split(',') if e.strip()]
+            if emojis:
+                api_url = f"https://api.telegram.org/bot{context.bot.token}/setMessageReaction"
+                payload = {
+                    "chat_id": message.chat_id,
+                    "message_id": message.message_id,
+                    "reaction": [{"type": "emoji", "emoji": emoji} for emoji in emojis],
+                    "is_big": False,
+                }
+                response = requests.post(api_url, json=payload, timeout=15)
+                result = response.json()
+                if not response.ok or not result.get("ok"):
+                    raise RuntimeError(result.get("description", "Telegram rejected the reaction"))
+                logging.info("Reaction sent: channel=%s message=%s emojis=%s", channel_id, message.message_id, emojis)
+        except Exception as e:
+            logging.exception("Reaction failed for channel %s message %s: %s", channel_id, message.message_id, e)
 
 def run_reaction_bot_sync(token, channel_id, emojis, stop_event):
-    """সিঙ্ক্রোনাস ফাংশন যা আলাদা থ্রেডে চলবে"""
+    """Run one dedicated Telegram polling application for one reaction bot."""
     try:
         rb_app = Application.builder().token(token).build()
-        rb_app.add_handler(MessageHandler(filters.ALL, auto_react))
-        
-        # বট চালু করা
-        rb_app.run_polling(drop_pending_updates=True, close_loop=False)
+        # TypeHandler ensures channel_post and edited_channel_post updates are seen.
+        rb_app.add_handler(TypeHandler(Update, auto_react))
+        rb_app.run_polling(drop_pending_updates=False, close_loop=False)
     except Exception as e:
-        logging.error(f"Error in reaction bot thread for {channel_id}: {e}")
+        logging.exception("Error in reaction bot thread for %s: %s", channel_id, e)
 
 def start_single_reaction_bot(token, channel_id, emojis):
-    """ফ্লাস্ক থেকে নতুন বট চালু করার ফাংশন"""
-    if token in active_reaction_apps: 
+    if token in active_reaction_apps and active_reaction_apps[token]['thread'].is_alive():
         return
-    
     try:
         stop_event = threading.Event()
         thread = threading.Thread(target=run_reaction_bot_sync, args=(token, channel_id, emojis, stop_event), daemon=True)
         thread.start()
-        
-        active_reaction_apps[token] = {'thread': thread, 'stop_event': stop_event}
-        logging.info(f"Reaction Bot started for channel: {channel_id}")
+        active_reaction_apps[token] = {'thread': thread, 'stop_event': stop_event, 'channel_id': channel_id}
+        logging.info("Reaction Bot started for channel: %s", channel_id)
     except Exception as e:
-        logging.error(f"Failed to start Reaction Bot for {channel_id}: {e}")
-
+        logging.exception("Failed to start reaction bot for %s: %s", channel_id, e)
 
 # ==================== APK BOT LOGIC ====================
 async def check_channels(user_id, context):
