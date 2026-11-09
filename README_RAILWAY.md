@@ -1,9 +1,4 @@
-# Reaction Bot - Railway Fixed Build
-
-## Environment Variables
-- BOT_TOKEN = main Telegram bot token
-- ADMIN_PASSWORD = HTML Admin password
-- FLASK_SECRET_KEY = optional; if omitted, a stable secret is derived from BOT_TOKEN + ADMIN_PASSWORD
+# Reaction Bot — Railway Fixed Final
 
 ## Railway
 Build command:
@@ -12,15 +7,33 @@ Build command:
 Start command:
 `python BOT.py`
 
-## Admin
-Open `/admin` on the Railway public domain.
+## Required Variables
+- `BOT_TOKEN` = main bot token
+- `ADMIN_PASSWORD` = HTML admin login password
 
-## Reaction Bot setup
-1. Add the reaction bot token in Admin > Reaction Bots.
-2. Enter the target channel ID (for example `-1001234567890`).
-3. Enter an emoji. If multiple are entered comma-separated, the first emoji is used because Telegram allows a bot to set one reaction per message.
-4. The reaction bot must be an administrator in the target channel.
-5. The fixed listener uses full Telegram Update objects so `channel_post` and `edited_channel_post` are received reliably.
+Optional:
+- `FLASK_SECRET_KEY` = long random secret
+- `DATABASE_FILE` = database path (default `bot_database.json`)
 
-## Persistence
-Reaction bot configuration and app data are stored in `bot_database.json` so a Railway restart does not immediately erase the configuration. For production persistence across service replacement, attach a Railway Volume or move the DB to an external database.
+## HTML Admin
+Open:
+`https://YOUR-RAILWAY-DOMAIN/admin`
+
+## Reaction Bot Setup
+In HTML Admin → Reaction Bots:
+1. Enter the **separate reaction bot token**.
+2. Enter the exact channel ID, e.g. `-1001234567890`.
+3. Enter an emoji, e.g. `❤️` or `🔥`.
+4. Click Add & Verify.
+
+The server verifies:
+- token is valid
+- channel is reachable by that bot
+- the reaction bot's status is `administrator` or `creator`
+
+The worker then uses Telegram Bot API `getUpdates` with only `channel_post` and `edited_channel_post` updates and calls `setMessageReaction` for the configured channel.
+
+## Important
+Do NOT use the main `BOT_TOKEN` as a reaction-bot token. Each reaction worker needs its own bot token so it can have its own polling stream.
+
+The reaction bot must be an administrator in the target channel. If Telegram rejects the reaction, the Railway logs will show the exact Bot API error description.
